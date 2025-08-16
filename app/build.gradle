@@ -1,0 +1,61 @@
+plugins {
+    id "com.android.application"
+    id "org.jetbrains.kotlin.android"
+}
+
+android {
+    namespace "com.example.mnnllmdemo"
+    compileSdk 34
+
+    defaultConfig {
+        applicationId "com.example.mnnllmdemo"
+        minSdk 21
+        targetSdk 34
+        versionCode 1
+        versionName "1.0"
+
+        ndk { abiFilters "arm64-v8a" }
+    }
+
+    buildFeatures { viewBinding true }
+
+    // 建议补上 Java 1.8 以防有 Java 源码
+    compileOptions {
+        sourceCompatibility JavaVersion.VERSION_1_8
+        targetCompatibility JavaVersion.VERSION_1_8
+    }
+    kotlinOptions { jvmTarget = "1.8" }
+
+    // 用新 DSL（AGP 8）
+    packaging {
+        jniLibs { useLegacyPackaging = true }
+        resources {
+            excludes += '/META-INF/{AL2.0,LGPL2.1}'
+            // 如遇资源重复再放开：
+            // pickFirsts += ['**/META-INF/*']
+        }
+    }
+}
+
+dependencies {
+    // 只依赖你自己的 TTS 模块
+    implementation project(':chinesettsmodule')
+
+    // 如果 app/libs 目录没有 jar，这行可删；保留就只扫 jar，别扫 aar
+    implementation fileTree(dir: "libs", include: ["*.jar"])
+
+    // 其它正常依赖
+    implementation 'com.google.code.gson:gson:2.11.0'
+    implementation 'com.jakewharton.timber:timber:5.0.1'
+
+    implementation 'androidx.core:core-ktx:1.7.0'
+    implementation 'androidx.appcompat:appcompat:1.4.1'
+    implementation 'com.google.android.material:material:1.6.0'
+
+    implementation "androidx.navigation:navigation-fragment-ktx:2.7.7"
+    implementation "androidx.navigation:navigation-ui-ktx:2.7.7"
+
+    testImplementation 'junit:junit:4.13.2'
+    androidTestImplementation 'androidx.test.ext:junit:1.1.5'
+    androidTestImplementation 'androidx.test.espresso:espresso-core:3.5.1'
+}

@@ -1,0 +1,43 @@
+plugins {
+    id 'com.android.library'
+    id 'org.jetbrains.kotlin.android'
+}
+
+android {
+    namespace "com.benjaminwan.chinesettsmodule"
+    compileSdk 34
+
+    defaultConfig {
+        minSdk 21
+        consumerProguardFiles "consumer-rules.pro"
+    }
+
+    compileOptions {
+        sourceCompatibility JavaVersion.VERSION_1_8
+        targetCompatibility JavaVersion.VERSION_1_8
+    }
+    kotlinOptions { jvmTarget = '1.8' }
+
+    packaging {
+        resources {
+            excludes += '/META-INF/{AL2.0,LGPL2.1}'
+        }
+    }
+}
+
+dependencies {
+    // 只用本地 AAR / JAR（会把 libs 里的 tflite*.aar 扫进来）
+    implementation fileTree(dir: "libs", include: ["*.aar", "*.jar"])
+
+    // 你代码里用到 TensorBuffer 等，需要 support；
+    // 但一定要把其中自带的 tflite 依赖排除，避免与本地 AAR 冲突
+    implementation('org.tensorflow:tensorflow-lite-support:0.3.1') {
+        exclude group: 'org.tensorflow', module: 'tensorflow-lite'
+        exclude group: 'org.tensorflow', module: 'tensorflow-lite-api'
+        exclude group: 'org.tensorflow', module: 'tensorflow-lite-select-tf-ops'
+    }
+
+    implementation 'com.orhanobut:logger:2.2.0'
+    implementation 'com.belerweb:pinyin4j:2.5.1'
+    implementation 'com.github.benjaminwan:MoshiUtils:1.0.6'
+}
