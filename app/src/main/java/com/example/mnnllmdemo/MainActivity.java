@@ -1,6 +1,5 @@
 package com.example.mnnllmdemo;
-import java.util.Arrays;
-import java.util.Collections;
+
 import com.alibaba.mnnllm.android.llm.LlmGate;
 
 import java.util.List;
@@ -41,7 +40,7 @@ import android.os.Looper;
 import android.util.TypedValue;
 import android.view.Gravity;
 import android.view.Surface;
-import android.view.View;
+
 import android.view.Window;
 import android.view.WindowManager;
 import android.widget.LinearLayout;
@@ -72,8 +71,8 @@ public class MainActivity extends AppCompatActivity {
     private int clickCount = 0;
     private int settingStep = 0;
 
-    private float[] speedOptions = {0.8f, 0.7f, 0.6f};  // 语速：慢，正常，快
-    private int[] intervalOptions = {1000, 700, 500};   // 检测频率：1000ms，700ms，500ms
+    private float[] speedOptions = {0.65f, 0.55f, 0.45f};  // 语速：慢，正常，快
+    private int[] intervalOptions = {1000, 700, 550};   // 检测频率：1000ms，700ms，500ms
 
     @SuppressWarnings("unchecked")
 

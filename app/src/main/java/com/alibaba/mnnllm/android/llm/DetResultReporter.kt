@@ -23,20 +23,24 @@ object DetResultReporter {
     @JvmStatic fun setBatchSize(value: Int) { batchSize = value.coerceIn(1, 50) }
     @JvmStatic fun setBatchSizeFromInterval(intervalMs: Int) {
         // 建议：约 3000ms 聚合一次
-        val mapped = kotlin.math.max(1, Math.round(3000f / intervalMs))
+        val mapped = kotlin.math.max(1, Math.round(2750f / intervalMs))
         setBatchSize(mapped)
     }
 
-    // ====== 空播抑制策略 ======
-    enum class EmptyPolicy { EDGE_ONLY, COOLDOWN }
-    @Volatile private var emptyPolicy: EmptyPolicy = EmptyPolicy.EDGE_ONLY
-    @Volatile private var EMPTY_COOLDOWN_MS = 6000L
-    @Volatile private var lastSentWasEmpty: Boolean = false
-    @Volatile private var lastSentEmptyTs: Long = 0L
+    // —— 方位映射（按距离两档 + 横向分段）——
+    private const val DEPTH_NEAR_TH = 0.60f
+    // 近距离：三等分
+    private const val NEAR_LEFT_MAX   = 0.33f   // [0,0.33)
+    private const val NEAR_FRONT_MIN  = 0.33f   // [0.33,0.66]
+    private const val NEAR_FRONT_MAX  = 0.66f   // (0.66,1] 为右侧
+    // 远距离：中间更窄
+    private const val FAR_LEFT_MAX    = 0.40f   // [0,0.40)
+    private const val FAR_FRONT_MIN   = 0.40f   // [0.40,0.60]
+    private const val FAR_FRONT_MAX   = 0.60f   // (0.60,1] 为右前
 
     // ====== YOLO 规格（用于归一） ======
-    private const val NORM_W = 512f
-    private const val NORM_H = 288f
+    private const val NORM_W = 640f
+    private const val NORM_H = 384f
 
     // ====== 筛选阈值 ======
     private const val CONF_THRES = 0.45f
@@ -47,7 +51,7 @@ object DetResultReporter {
     private const val LATERAL_DIST_MAX_FOR_INPUT = 0.90f
     private const val EDGE_X_LEFT_FRAC = 0.15f
     private const val EDGE_X_RIGHT_FRAC = 0.85f
-    private const val EDGE_SMALL_AREA_MAX_FRAC = 0.05f
+    private const val EDGE_SMALL_AREA_MAX_FRAC = 0.01f
     private const val TOP_K_FOR_INPUT = 5
     private const val NEAR_VIB_THRESHOLD = 0.4f
     private const val NEAR_VIB_COOLDOWN_MS = 600L
@@ -73,13 +77,24 @@ object DetResultReporter {
         return if (t.startsWith("你是小智")) t else INSTR_PREFIX + "\n" + t
     }
 
-    // ====== 去重缓存 ======
+    // ====== 去重缓存（按“类别+方位”去重；每类最多 2 条） ======
     private val lock = Any()
-    private data class Item(val label: String, val score: Float, val value: Float, val raw: String, val frameId: Long)
+
+    private data class Item(
+        val label: String,
+        val posToken: String,  // 新增：方位 token（LS/LF/F/RF/RS/UNK）
+        val score: Float,
+        val value: Float,
+        val raw: String,
+        val frameId: Long
+    )
     private data class Header(val label: String, val score: Float, val value: Float, val raw: String, val frameId: Long)
-    private val bufByLabel = LinkedHashMap<String, Item>()
+
+    // 由“类别 → (方位 → Item)”组成；保证同一类别的同一方位最多 1 条；每个类别最多 2 条
+    private val bufByLabelPos: LinkedHashMap<String, LinkedHashMap<String, Item>> = LinkedHashMap()
+
     private var pendingHeader: Header? = null
-    private var offerCount: Int = 0            // ← 现在表示“YOLO tick 计数” // NEW
+    private var offerCount: Int = 0
     private var currentFrameId: Long = 0L
 
     // ====== 外部接口 ======
@@ -108,12 +123,28 @@ object DetResultReporter {
         offerHeader(header)
     }
 
+    // 按“距离阈值 + 横向区间”映射到方位 token
+    private fun posTokenByDepthAndX(cxNorm: Float, depthVal: Float): String {
+        return if (depthVal <= DEPTH_NEAR_TH) {
+            when {
+                cxNorm < NEAR_LEFT_MAX   -> "LS" // 左侧
+                cxNorm <= NEAR_FRONT_MAX -> "F"  // 前方
+                else                     -> "RS" // 右侧
+            }
+        } else {
+            when {
+                cxNorm < FAR_LEFT_MAX    -> "LF" // 左前方
+                cxNorm <= FAR_FRONT_MAX  -> "F"  // 前方
+                else                     -> "RF" // 右前方
+            }
+        }
+    }
+
     /** 兼容 header|bbox / 单独 header / 单独 bbox / __EMPTY__ */
     @JvmStatic fun offerRaw(line: String) {
         val t = line.trim()
         if (t.isEmpty()) return
 
-        // —— 空帧行：现在不再在这里计数；只作为“本 tick 无目标”的占位可忽略 —— // NEW
         if (t == "__EMPTY__" || t.startsWith("__EMPTY__")) {
             Log.d(TAG, "offerRaw: EMPTY line (no-op; counting happens in commitTick)")
             return
@@ -143,26 +174,14 @@ object DetResultReporter {
         else pendingHeader = Header(t, 0f, Float.POSITIVE_INFINITY, t, currentFrameId)
     }
 
-    /** 手动冲洗：立即把现有去重池内容发出去（仍走同一出口），不影响当前 tick 计数 */
-    @JvmStatic fun flushNow(context: Context? = null) {
-        if (context != null) appCtx = context.applicationContext
-        val snapshot: List<String>
-        synchronized(lock) {
-            pendingHeader = null
-            snapshot = if (bufByLabel.isEmpty()) emptyList() else snapshotAndClear()
-        }
-        sendBatch(snapshot)
-    }
-
-    // ====== 关键新增：每次 YOLO 完成后调用一次，只在这里 +1 计数并判断是否触发 ====== //
-    @JvmStatic fun commitTick() { // NEW
+    // ====== 每次 YOLO 完成后调用一次，只在这里 +1 并判断是否触发 ======
+    @JvmStatic fun commitTick() {
         var ready: List<String>? = null
         synchronized(lock) {
-            // 若还有挂起 header，这里不再强制入库（GLRender 已发送完整行，不会走到这步）
             offerCount++
-            Log.d(TAG, "commitTick: tick=${offerCount}/${batchSize}, unique_pool=${bufByLabel.size}")
+            Log.d(TAG, "commitTick: tick=${offerCount}/${batchSize}, unique_pool=${poolSize()}")
             if (offerCount >= batchSize) {
-                ready = if (bufByLabel.isEmpty()) emptyList() else snapshotAndClear()
+                ready = if (poolSize() == 0) emptyList() else snapshotAndClear()
                 offerCount = 0
             }
         }
@@ -175,7 +194,7 @@ object DetResultReporter {
             if (h.raw.contains("Left:", ignoreCase = true)) {
                 putDedup(h.label, h.score, h.value, h.raw, h.frameId)
             } else {
-                pendingHeader?.let { putDedup(it.label, it.score, it.value, it.raw, it.frameId) }
+                // 若没有 bbox，先挂起等待 bbox；不强制把旧的 pending 放入池
                 pendingHeader = h
                 Log.d(TAG, "offerHeader: pending='${h.raw}' waiting bbox, frame=${h.frameId}")
             }
@@ -195,29 +214,70 @@ object DetResultReporter {
         }
     }
 
-    /** 跨帧覆盖；同帧保高分；命中 vibrateTargets 震动。**不再在这里加计数**。 */ // NEW
+    /**
+     * 新规则：
+     * 1) 同类别 + 同方位（posToken）只保留 1 条：
+     *      - 新帧覆盖旧帧；同帧取更高分。
+     * 2) 每个类别最多保留 2 条（不同方位优先共存）：
+     *      - 若插入后超过 2 条，则移除“最远的那条”（value 最大；若并列，删分数低/更旧）。
+     * 3) 命中 vibrateTargets：新方位首次出现或新帧更新时震动。
+     */
     private fun putDedup(label: String, score: Float, value: Float, raw: String, frameId: Long) {
-        val old = bufByLabel[label]
+        // 计算方位 token（尽量从 raw 的 bbox 中计算；失败则置 UNK）
+        val posToken = computePosTokenFromRaw(raw, value)
+
+        val mapForLabel = bufByLabelPos.getOrPut(label) { LinkedHashMap() }
+        val old = mapForLabel[posToken]
+
         val replace = when {
             old == null -> true
             frameId > old.frameId -> true
             frameId == old.frameId -> score >= old.score
             else -> false
         }
+
         if (replace) {
-            bufByLabel[label] = Item(label, score, value, raw, frameId)
-            val needVibrate = (old == null || frameId > (old?.frameId ?: -1))
-            if (needVibrate && label in vibrateTargets) vibrateNow()
-            Log.d(TAG, "putDedup: UPSERT label='$label' frame=$frameId")
+            mapForLabel[posToken] = Item(label, posToken, score, value, raw, frameId)
+            val isNewSlot = (old == null)
+            val updatedToNewFrame = (old != null && frameId > old.frameId)
+            // 仅当该类别被关注时震动（首次出现该方位或新帧更新）
+            if ((isNewSlot || updatedToNewFrame) && label in vibrateTargets) {
+                vibrateNow()
+            }
+            Log.d(TAG, "putDedup: UPSERT [$label@$posToken] frame=$frameId")
         } else {
-            Log.d(TAG, "putDedup: KEEP   label='$label' keep.frame=${old?.frameId} drop.frame=$frameId")
+            Log.d(TAG, "putDedup: KEEP   [$label@$posToken] keep.frame=${old?.frameId} drop.frame=$frameId")
+        }
+
+        // 类别上限：最多 2 条；若超过，删除“最远/较弱/较旧”的一条
+        if (mapForLabel.size > 2) {
+            val victim = mapForLabel.values.maxWith(
+                compareBy<Item> { it.value }              // 远的优先删
+                    .thenBy { it.score }                 // 分低的优先删
+                    .thenBy { it.frameId }              // 旧的优先删
+            )
+            if (victim != null) {
+                mapForLabel.remove(victim.posToken)
+                Log.d(TAG, "putDedup: CAP=2, evict [$label@${victim.posToken}] value=${"%.2f".format(victim.value)} score=${"%.2f".format(victim.score)}")
+            }
         }
     }
+    private fun bucketOf(f: Feat): Int {
+        val v = f.p.value
+        return when {
+            f.posToken == "F"  && v <= DEPTH_NEAR_TH -> 0   // 前方（近）
+            f.posToken == "LS" || f.posToken == "RS" -> 1   // 左右侧
+            f.posToken == "F"  && v >  DEPTH_NEAR_TH -> 2   // 前方（远）
+            f.posToken == "LF" || f.posToken == "RF" -> 3   // 左右前方
+            else                                      -> 4   // 兜底
+        }
+    }
+    private fun poolSize(): Int = bufByLabelPos.values.sumOf { it.size }
 
     private fun snapshotAndClear(): List<String> {
-        val lines = bufByLabel.values.map { it.raw }
+        val lines = bufByLabelPos.values.flatMap { it.values }.map { it.raw }
         Log.d(TAG, "snapshotAndClear: batch_size=${lines.size}, will send & clear.")
-        bufByLabel.clear()
+        bufByLabelPos.clear()
         return lines
     }
 
@@ -233,8 +293,6 @@ object DetResultReporter {
         val content = buildPromptWithFiltering(lines)
         val isEmptyPrompt = content.trim() == "未检测到障碍"
 
-        // ✅ 不再按 emptyPolicy 丢弃空旷；达到批次就发
-        // 仅在 LLM 忙时仍丢弃空旷，避免排队全是“空”的占用
         if (!llmBusy.compareAndSet(false, true)) {
             if (isEmptyPrompt) {
                 Log.d(TAG, "sendBatch: llmBusy, drop EMPTY while busy")
@@ -270,7 +328,13 @@ object DetResultReporter {
         val label: String, val score: Float, val value: Float,
         val left: Float, val top: Float, val right: Float, val bottom: Float
     )
-    private data class Feat(val p: ParsedDet, val posToken: String, val areaFrac: Float, val cxNorm: Float)
+    private data class Feat(
+        val p: ParsedDet,
+        val posToken: String,
+        val areaFrac: Float,
+        val cxNorm: Float,
+        val cyNorm: Float
+    )
 
     private fun buildPromptWithFiltering(uniqueLines: List<String>): String {
         val EN2ZH = mapOf(
@@ -296,18 +360,18 @@ object DetResultReporter {
 
         val feats = s3.map { d ->
             val cx = (d.left + d.right) * 0.5f
+            val cy = (d.top + d.bottom) * 0.5f
             val cxNorm = clamp01(cx / NORM_W)
+            val cyNorm = clamp01(cy / NORM_H)
+
+            val token = posTokenByDepthAndX(cxNorm, d.value)
+
             Feat(
                 p = d,
-                posToken = when {
-                    cxNorm < 0.2f -> "LS"
-                    cxNorm < 0.4f -> "LF"
-                    cxNorm < 0.6f -> "F"
-                    cxNorm < 0.8f -> "RF"
-                    else -> "RS"
-                },
+                posToken = token,
                 areaFrac = areaFrac(d),
-                cxNorm = cxNorm
+                cxNorm = cxNorm,
+                cyNorm = cyNorm
             )
         }
 
@@ -324,11 +388,29 @@ object DetResultReporter {
             !(inEdge && f.areaFrac < EDGE_SMALL_AREA_MAX_FRAC)
         }
 
-        val topK = s7.sortedWith(compareBy<Feat> { it.p.value }.thenByDescending { it.p.score })
-            .take(TOP_K_FOR_INPUT)
+        val bucketedSorted = s7.sortedWith(
+            compareBy<Feat> { bucketOf(it) }
+                .thenBy        { it.p.value }
+                .thenByDescending { it.p.score }
+        )
 
-        val parts = topK.map { f ->
-            val nameZh = toZhLabel(f.p.label)
+        val topK = s7.sortedWith(
+            compareBy<Feat> { it.p.value }      // 先按距离（越小越近）
+                .thenByDescending { it.p.score } // 再按置信度
+        ).take(TOP_K_FOR_INPUT)
+
+        fun isBenchOrPole(lbl: String): Boolean {
+            return lbl == "长椅" || lbl.equals("bench", ignoreCase = true) ||
+                    lbl == "杆柱" || lbl.equals("pole",  ignoreCase = true)
+        }
+
+
+
+        val (others, benchesPoles) = topK.partition { !isBenchOrPole(it.p.label) }
+        val finalOrder = others + benchesPoles
+
+        val parts = finalOrder.map { f ->
+            val nameZh = toZhLabel(f.p.label)      // 如果你已完全中文输入，也可直接用 f.p.label
             val orientZh = zhFromPosToken(f.posToken)
             val vStr = "%.2f".format(Locale.US, f.p.value)
             "$nameZh，$orientZh，距离$vStr"
@@ -395,6 +477,19 @@ object DetResultReporter {
         val m = BBOX_RE.find(s.trim()) ?: return null
         val (l, t, r, b) = m.groupValues.drop(1).map { it.toFloat() }
         return Quad(l, t, r, b)
+    }
+
+    // 从原始行里解析 bbox 并计算方位；若失败，则返回 "UNK"
+    private fun computePosTokenFromRaw(raw: String, depthVal: Float): String {
+        val bboxStr = raw.substringAfter('|', "").trim()
+        val q = parseBbox(bboxStr)
+        return if (q != null) {
+            val cx = (q.a + q.c) * 0.5f
+            val cxNorm = clamp01(cx / NORM_W)
+            posTokenByDepthAndX(cxNorm, depthVal)
+        } else {
+            "UNK"
+        }
     }
 
     // ====== 震动 ======
