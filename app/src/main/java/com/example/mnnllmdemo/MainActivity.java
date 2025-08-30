@@ -118,7 +118,7 @@ public class MainActivity extends AppCompatActivity {
     private static final int MIN_DETECT_MS = 100;
     private static final int MAX_DETECT_MS = 1000;
 
-    private static final String INIT_TTS_TEXT = "初始化完成，请横屏使用，按住可进入设置模式，设置结束后可恢复导盲。";
+    private static final String INIT_TTS_TEXT = "请横屏使用，按住屏幕可进入设置模式，设置结束后可恢复导盲。";
     private static final long MIN_LOCK_MS = 2000L; // 初始最短锁定时长，避免太短
     private static final float BASE_ALPHA = 0.70f; // 默认语速系数
 
@@ -205,12 +205,14 @@ public class MainActivity extends AppCompatActivity {
 
 
         // ② 初始化期间先装“空”的点击/长按监听，防止误触
-        mGLSurfaceView.setOnClickListener(v -> { /* ignore during init */ });
-        mGLSurfaceView.setOnLongClickListener(v -> true); // 初始化锁内，长按也忽略
+        mainScreenLayout.setOnClickListener(v -> { /* ignore during init */ });
+        mainScreenLayout.setOnLongClickListener(v -> true); // 初始化锁内，长按也忽略
 
         // ③ 播报“初始化完成…”，估算播报时长后再解锁并安装真正监听
         new Handler(Looper.getMainLooper()).postDelayed(() -> {
+
             try {
+                //动画稍慢于初始化
                 TtsEngine.speak(INIT_TTS_TEXT, true);
             } catch (Throwable ignore) {
             } finally {
@@ -220,7 +222,7 @@ public class MainActivity extends AppCompatActivity {
                 new Handler(Looper.getMainLooper()).postDelayed(() -> {
 
                     // —— 设置模式下用“横屏左中右(=x/宽)”来选择 —— //
-                    mGLSurfaceView.setOnTouchListener((view, event) -> {
+                    mainScreenLayout.setOnTouchListener((view, event) -> {
                         // 仅在“设置模式”(闸门=关)处理触摸
                         if (!LlmGate.isBusy()) return false;
 
@@ -285,7 +287,7 @@ public class MainActivity extends AppCompatActivity {
                     });
 
                     // —— 长按：非设置模式→进入；设置模式→（不处理退出，退出靠“再次点击”） —— //
-                    mGLSurfaceView.setOnLongClickListener(v2 -> {
+                    mainScreenLayout.setOnLongClickListener(v2 -> {
                         if (!LlmGate.isBusy()) {
                             // 进入设置模式（闸门关）
                             LlmGate.setBusy(true);
@@ -327,7 +329,7 @@ public class MainActivity extends AppCompatActivity {
 
         // 定义动画时长和延迟
         long duration = 1500; // 每个元素淡入的时长
-        long staggerDelay = 1000; // 每个元素之间出现的延迟
+        long staggerDelay = 800; // 每个元素之间出现的延迟
 
         // 中心图标
         splashCenterIcon.animate()
