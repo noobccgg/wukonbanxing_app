@@ -29,7 +29,6 @@
 │  └─ libs/arm64-v8a/ort_1.21.0_qnn_2.32/ ...   # （可选）第三方本地库
 ├─ chinesettsmodule/                  # 中文 TTS 独立模块
 │  └─ src/main/java/com/benjaminwan/chinesettsmodule/{tts,utils}/
-├─ lib/arm64-v8a/                     # 建议清理或迁移到 app/src/main/jniLibs/arm64-v8a
 ├─ gradle/ , gradlew(.bat)            # Gradle Wrapper
 ├─ settings.gradle , build.gradle     # 顶层构建脚本
 └─ README.md                          # 本文件
@@ -54,7 +53,7 @@ graph LR
   TTS --> Voice["播报"]
 ```
 
-**关键模块**（命名以你仓库实际为准）：
+**关键模块**：
 
 * **GLRender**：相机帧从 OES 转 RGB，分发至 YOLO/DEPTH；带节流。
 * **YOLO / Depth**：推理前后处理，封装为 Native/C++/MNN 或 Java/Kotlin 接口。
@@ -170,7 +169,6 @@ app/src/main/assets/models/Qwen3-0.6B-MNN/
 }
 ```
 
-> 若没有 `llm.mnn.weight`，可删除该字段。
 
 ### 2) 中文 TTS
 
@@ -188,28 +186,8 @@ app/src/main/jniLibs/arm64-v8a/
   └─ ...
 ```
 
----
 
-## 快速开始
 
-### A. Windows（PowerShell / CMD）
-
-```bat
-:: 在仓库根目录
-.\u005cgradlew.bat assembleDebug
-adb install -r app\build\outputs\apk\debug\app-debug.apk
-```
-
-### B. macOS / Linux
-
-```bash
-./gradlew assembleDebug
-adb install -r app/build/outputs/apk/debug/app-debug.apk
-```
-
-> Release 包：你也可以在本仓库 **Releases** 页面直接下载作者提供的模型压缩包并解压到 `app/src/main/assets/models/`（若已提供）。
-
----
 
 ## 运行与操作
 
@@ -251,16 +229,15 @@ adb install -r app/build/outputs/apk/debug/app-debug.apk
 
 * LLM 返回完整文本后一次性播报；
 * 通过音频焦点减少与系统/他应用冲突；
-
-> **说明**：本项目不包含“空旷场景提示/无障碍物播报/冷却”等逻辑。
+  
 
 ---
 
 ## 性能与调参建议
 
-* **输入尺寸**：384×640（更快）/448×800（折中）/512×896（稳）
+* **输入尺寸**：288×512（快）/384×640（折中）/448×800（慢）
 * **Top‑K**：通常 3–5，继续增大收益递减且拖慢 LLM
-* **量化**：LLM `q4` 主干 + `lm 8bit` 头是较稳方案；检测/深度尽量选轻量 backbone
+* **量化**：LLM `q8` 主干 + `lm 16bit` 头是较稳方案；
 * **线程与拷贝**：尽量减少 OES→CPU 读回；推理与 TTS 分线程并使用门控
 
 ---
@@ -278,6 +255,9 @@ MNN 版本或转换工具不匹配，确保转换器与运行时版本一致，�
 
 **Q4. OOM / 卡顿？**
 降低模型尺寸/输入分辨率、增大节流间隔、缩小 Top‑K、精简 Prompt、减少日志、避免任务堆积。
+
+**Q5. 推理过程中闪退？**
+将tokenizer.txt换为LF格式。
 
 ---
 
