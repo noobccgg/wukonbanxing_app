@@ -1,0 +1,119 @@
+<?xml version="1.0" encoding="utf-8"?>
+<androidx.constraintlayout.widget.ConstraintLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:app="http://schemas.android.com/apk/res-auto"
+    xmlns:tools="http://schemas.android.com/tools"
+    android:layout_width="match_parent"
+    android:layout_height="match_parent"
+    android:background="@color/black"
+    tools:context=".MainActivity">
+
+    <android.opengl.GLSurfaceView
+        android:id="@+id/glSurfaceView"
+        android:layout_width="40dp"
+        android:layout_height="40dp"
+        android:layout_marginBottom="1dp"
+        app:layout_constraintBottom_toBottomOf="parent"
+        app:layout_constraintEnd_toEndOf="parent"
+        app:layout_constraintHorizontal_bias="0.0"
+        app:layout_constraintStart_toStartOf="parent"
+        app:layout_constraintTop_toTopOf="parent"
+        app:layout_constraintVertical_bias="1.0" />
+
+    <TextView
+        android:id="@+id/fps"
+        android:layout_width="100dp"
+        android:layout_height="20dp"
+        android:rotation="90"
+        android:text="0"
+        android:textAlignment="viewStart"
+        android:textColor="#FF0000"
+        android:textSize="16sp"
+        android:textStyle="bold"
+        app:layout_constraintBottom_toBottomOf="parent"
+        app:layout_constraintEnd_toEndOf="parent"
+        app:layout_constraintHorizontal_bias="1.0"
+        app:layout_constraintStart_toStartOf="parent"
+        app:layout_constraintTop_toTopOf="parent"
+        app:layout_constraintVertical_bias="0.1" />
+
+    <TextView
+        android:id="@+id/class_list"
+        android:layout_width="228dp"
+        android:layout_height="154dp"
+        android:layout_marginStart="4dp"
+        android:layout_marginTop="31dp"
+        android:rotation="90"
+        android:text="Detected"
+        android:textAlignment="viewStart"
+        android:textColor="#FFFFFF"
+        android:textSize="16sp"
+        android:textStyle="bold"
+        app:layout_constraintBottom_toBottomOf="parent"
+        app:layout_constraintStart_toStartOf="parent"
+        app:layout_constraintTop_toTopOf="@+id/glSurfaceView"
+        app:layout_constraintVertical_bias="0.072" />
+
+    <TextView
+        android:id="@+id/depth"
+        android:layout_width="100dp"
+        android:layout_height="20dp"
+        android:rotation="90"
+        android:layout_marginHorizontal="3dp"
+        android:layout_marginVertical="2dp"
+        app:layout_constraintBottom_toBottomOf="parent"
+        app:layout_constraintStart_toStartOf="parent"
+        app:layout_constraintTop_toTopOf="@+id/glSurfaceView"
+        android:text="0"/>
+
+    <!--加入背景不影响, 若删去fps等, 会闪退.-->
+    <!-- 主界面背景, 初始不可见 -->
+    <RelativeLayout
+        android:id="@+id/main_screen_layout"
+        android:layout_width="match_parent"
+        android:layout_height="match_parent"
+        android:background="@drawable/main_splash"
+        android:visibility="gone">
+    </RelativeLayout>
+
+    <RelativeLayout
+        android:id="@+id/splash_screen_layout"
+        android:layout_width="match_parent"
+        android:layout_height="match_parent">
+
+        <!-- a. 纯背景图，始终可见 -->
+        <ImageView
+            android:layout_width="match_parent"
+            android:layout_height="match_parent"
+            android:scaleType="centerCrop"
+            android:src="@drawable/splash_background"
+            tools:alpha="1"/>
+
+        <ImageView
+            android:id="@+id/splash_logo_title"
+            android:layout_width="545dp"
+            android:layout_height="411dp"
+            android:layout_alignParentTop="true"
+            android:layout_centerHorizontal="true"
+            android:layout_marginTop="-135dp"
+            android:alpha="0"
+            android:src="@drawable/splash_logo_title" />
+
+        <ImageView
+            android:id="@+id/splash_center_icon"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:alpha="0"
+            android:src="@drawable/splash_center_icon" />
+
+        <ImageView
+            android:id="@+id/splash_slogan"
+            android:layout_centerHorizontal="true"
+            android:layout_width="180dp"
+            android:layout_height="180dp"
+            android:layout_marginTop="180dp"
+            android:alpha="0"
+            android:src="@drawable/splash_slogan" />
+
+    </RelativeLayout>
+
+</androidx.constraintlayout.widget.ConstraintLayout>
