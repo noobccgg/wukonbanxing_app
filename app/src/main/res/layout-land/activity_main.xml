@@ -66,13 +66,29 @@
         android:text="0"/>
 
     <!--加入背景不影响, 若删去fps等, 会闪退.-->
-    <!-- 主界面背景, 初始不可见 -->
+    <!-- 主界面祥云背景, 初始不可见 -->
     <RelativeLayout
         android:id="@+id/main_screen_layout"
         android:layout_width="match_parent"
         android:layout_height="match_parent"
         android:background="@drawable/main_splash"
         android:visibility="gone">
+        <FrameLayout
+            android:id="@+id/scrolling_text_viewport"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:layout_alignParentTop="true"
+            android:layout_centerHorizontal="true"
+            android:clipChildren="true"> <!-- 确保裁剪子视图 -->
+
+            <ImageView
+                android:id="@+id/scrolling_text_image"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:src="@drawable/scrolling_text" />
+
+        </FrameLayout>
+
     </RelativeLayout>
 
     <RelativeLayout

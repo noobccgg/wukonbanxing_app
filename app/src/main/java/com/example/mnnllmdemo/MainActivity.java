@@ -18,12 +18,18 @@ import com.example.mnnllmdemo.llm.LlmSimpleClient;
 import com.example.mnnllmdemo.llm.DetResultReporter;
 
 import android.Manifest;
+import android.animation.Animator;
+import android.animation.AnimatorListenerAdapter;
+import android.animation.AnimatorSet;
+import android.animation.ObjectAnimator;
+import android.animation.ValueAnimator;
 import android.annotation.SuppressLint;
 import android.content.Context;
 import android.content.SharedPreferences;
 import android.content.pm.PackageManager;
 import android.content.res.AssetManager;
 import android.graphics.SurfaceTexture;
+import android.graphics.drawable.Drawable;
 import android.hardware.camera2.CameraAccessException;
 import android.hardware.camera2.CameraCaptureSession;
 import android.hardware.camera2.CameraDevice;
@@ -38,15 +44,19 @@ import android.os.Bundle;
 import android.os.Handler;
 import android.os.HandlerThread;
 import android.os.Looper;
+import android.util.Log;
 import android.util.TypedValue;
 import android.view.Gravity;
 import android.view.Surface;
 
 import android.view.View;
+import android.view.ViewGroup;
 import android.view.Window;
 import android.view.WindowInsets;
 import android.view.WindowInsetsController;
 import android.view.WindowManager;
+import android.view.animation.LinearInterpolator;
+import android.widget.FrameLayout;
 import android.widget.ImageView;
 import android.widget.LinearLayout;
 import android.widget.RelativeLayout;
@@ -127,6 +137,11 @@ public class MainActivity extends AppCompatActivity {
     private ImageView splashLogoTitle;
     private ImageView splashCenterIcon;
     private ImageView splashSlogan;
+    private ImageView scrollingImageView;
+    private ObjectAnimator scrollAnimator;
+    private FrameLayout scrollingViewport;
+
+    private AnimatorSet animatorSet;
 
     // 从偏好里读取保存过的语速系数（越小越快），没有就用默认
     private float readSavedAlpha() {
@@ -167,6 +182,8 @@ public class MainActivity extends AppCompatActivity {
         splashCenterIcon = findViewById(R.id.splash_center_icon);
         splashSlogan = findViewById(R.id.splash_slogan);
         mainScreenLayout = findViewById(R.id.main_screen_layout);
+        scrollingImageView = findViewById(R.id.scrolling_text_image);
+        scrollingViewport = findViewById(R.id.scrolling_text_viewport);
         startLoadingAnimation();
 
         AssetManager mgr = getAssets();
@@ -322,10 +339,6 @@ public class MainActivity extends AppCompatActivity {
     // —— 旧的点击计数逻辑不再使用，这里留空以兼容旧调用 —— //
 
     private void startLoadingAnimation() {
-        // 确保所有视图都已准备好
-        if (splashLogoTitle == null || splashCenterIcon == null || splashSlogan == null) {
-            return;
-        }
 
         // 定义动画时长和延迟
         long duration = 1500; // 每个元素淡入的时长
@@ -358,6 +371,7 @@ public class MainActivity extends AppCompatActivity {
                 .start();
 
     }
+
     private void transferToMainAnimation() {
         splashScreenLayout.animate()
                 .alpha(0f)
@@ -374,8 +388,78 @@ public class MainActivity extends AppCompatActivity {
                 .alpha(1f)
                 .setDuration(500)
                 .start();
+        setupAndStartScrollingAnimation();
     }
-    // === 各项设置：保持原来的落盘/即时生效逻辑 ===
+
+    private void setupAndStartScrollingAnimation() {
+        // 我们使用 view.post() 方法，它能保证在View被正确布局后才执行内部的代码。
+        Drawable drawable = scrollingImageView.getDrawable();
+        if (drawable == null) return;
+
+        int imageWidth = drawable.getIntrinsicWidth() / 7;
+        int imageHeight = drawable.getIntrinsicHeight() / 2;
+        if (imageWidth <= 0) return;
+
+        // 尺寸设置
+        ViewGroup.LayoutParams viewportParams = scrollingViewport.getLayoutParams();
+        viewportParams.width = imageWidth;
+        viewportParams.height = imageHeight;
+        scrollingViewport.setLayoutParams(viewportParams);
+
+        ViewGroup.LayoutParams imageParams = scrollingImageView.getLayoutParams();
+        imageParams.width = imageWidth;
+        imageParams.height = imageHeight;
+        scrollingImageView.setLayoutParams(imageParams);
+
+        // 创建动画序列
+        ObjectAnimator scrollOutAnimator = ObjectAnimator.ofFloat(
+                scrollingImageView, "translationX", 0f, -imageWidth);
+        scrollOutAnimator.setDuration(4000L);
+        scrollOutAnimator.setInterpolator(new LinearInterpolator());
+        scrollOutAnimator.setStartDelay(2000L);
+
+        // 动画B: "登场" - 文字从右侧滚动回屏幕中央
+        ObjectAnimator scrollInAnimator = ObjectAnimator.ofFloat(
+                scrollingImageView, "translationX", imageWidth, 0f); // 从右侧(imageWidth)回到中间(0)
+        scrollInAnimator.setDuration(4000L);
+        scrollInAnimator.setInterpolator(new LinearInterpolator());
+
+        // 动画C: 登场结束后的停顿
+        ValueAnimator endPauseAnimator = ValueAnimator.ofInt(0, 1);
+        endPauseAnimator.setDuration(2000L);
+
+        // ！！！这是实现效果的关键！！！
+        // 我们监听“退场”动画的结束事件
+        scrollOutAnimator.addListener(new AnimatorListenerAdapter() {
+            @Override
+            public void onAnimationEnd(Animator animation) {
+                super.onAnimationEnd(animation);
+                // 当文字滚出左边后，立即将它“瞬移”到右边，为“登场”做准备
+                scrollingImageView.setTranslationX(imageWidth);
+            }
+        });
+
+        // 使用 AnimatorSet 按顺序播放
+        animatorSet = new AnimatorSet();
+        animatorSet.playSequentially(
+                scrollOutAnimator,  // 1. (带延迟) 退场
+                scrollInAnimator,   // 2. 登场
+                endPauseAnimator    // 3. 登场后停顿
+        );
+
+        // 设置循环
+        animatorSet.addListener(new AnimatorListenerAdapter() {
+            @Override
+            public void onAnimationEnd(Animator animation) {
+                super.onAnimationEnd(animation);
+                animatorSet.start();
+            }
+        });
+
+        animatorSet.start();
+    }
+
+
     private void setSpeedOption(int index) {
         currentSpeedIndex = Math.max(0, Math.min(2, index)); // 只允许 0..2
         float speed = speedOptions[currentSpeedIndex];
@@ -621,6 +705,9 @@ public class MainActivity extends AppCompatActivity {
     @Override
     protected void onDestroy() {
         super.onDestroy();
+        if (scrollAnimator != null && scrollAnimator.isRunning()) {
+            scrollAnimator.cancel();
+        }
         try {
             TtsEngine.release();
         } catch (Throwable ignore) {
