@@ -31,7 +31,7 @@ GLint yuvTexLoc = 0;
 const GLsizei camera_width = 1280;
 const GLsizei camera_height = 720;
 const GLsizei pixelCount = camera_width * camera_height;
-const int output_size_A = 6 * 3024;         // [x, y, w, h, max_score, max_indices] * yolo_num_boxes
+const int output_size_A = 6 * 5040;         // [x, y, w, h, max_score, max_indices] * yolo_num_boxes
 const int output_size_B = 294 * 518;        // depth_pixels
 const int pixelCount_rgb = 3 * pixelCount;
 const int gpu_num_group = 16;               // Customize it to fit your device's specifications.
@@ -63,6 +63,6 @@ std::vector<ONNXTensorElementDataType> input_types_B;
 std::vector<ONNXTensorElementDataType> output_types_B;
 std::vector<OrtValue*> input_tensors_B;
 std::vector<OrtValue*> output_tensors_B;
-const std::string file_name_A = "fianl_8q.onnx";
+const std::string file_name_A = "final_9_allq.onnx";
 const std::string file_name_B = "Depth_Anything_Metric_V2.ort";
 const std::string storage_path = "/storage/emulated/0/Android/data/com.example.mnnllmdemo/files/";

@@ -55,12 +55,12 @@ public class GLRender implements GLSurfaceView.Renderer {
     public static final int camera_width = 1280; // 修改这里时同步改 native project.h
     public static final int camera_height = 720;
 
-    private static final int yolo_width = 512;   // demo 模型并非 640x640
-    private static final int yolo_height = 288;
+    private static final int yolo_width = 640;   // demo 模型并非 640x640
+    private static final int yolo_height = 384;
     private static final int depth_width = 518;
     private static final int depth_height = 294;
 
-    private static final int yolo_num_boxes = 3024;
+    private static final int yolo_num_boxes = 5040;
     private static final int yolo_num_class = 6; // [x,y,w,h,max_score,max_indices]
 
     private static final int camera_pixels = camera_height * camera_width;
@@ -244,24 +244,31 @@ public class GLRender implements GLSurfaceView.Renderer {
             lastYoloTs = now;
             run_yolo = false;
             executorService.execute(() -> {
-                long t = System.currentTimeMillis();
                 LinkedList<Classifier.Recognition> list = Post_Process_Yolo(Run_YOLO(pixel_values));
                 draw_queue_yolo.add(list);
-                sum_t += System.currentTimeMillis() - t;
-                FPS = (float) count_t / sum_t;
-                if (count_t > 99999) { count_t >>= 1; sum_t >>= 1; }
-                count_t += 1000;
+                // 不再在 YOLO 里统计 FPS
                 run_yolo = true;
             });
         }
 
-        // Depth 冷却
+// Depth 冷却（用深度推理耗时统计 FPS）
         if (run_depth && (now - lastDepthTs) >= DEPTH_COOLDOWN_MS) {
             lastDepthTs = now;
             run_depth = false;
             executorService.execute(() -> {
-                // 1) 原始深度
+                // 1) 原始深度（计时）
+                long tDepthStart = System.currentTimeMillis();
                 depth_results = Run_Depth(pixel_values);
+                long dtDepth = System.currentTimeMillis() - tDepthStart;
+
+                // 用 Depth 推理耗时估算 FPS（throughput）
+                sum_t += dtDepth;                 // 累计耗时（ms）
+                FPS = (float) count_t / sum_t;    // ≈ 1000ms * 次数 / 总耗时
+                if (count_t > 99999) {            // 与原逻辑一致的防溢出
+                    count_t >>= 1;
+                    sum_t   >>= 1;
+                }
+                count_t += 1000;
 
                 // 2) 中心原始深度（可选）
                 float center_area = 0.f;
