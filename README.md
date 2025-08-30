@@ -10,7 +10,6 @@
 * 主要模块：`app/`、`chinesettsmodule/`
 * 版本发布：在 **Releases** 中提供模型压缩包（见右栏 *Releases*），可直接下载后解压到 `assets/models/` 对应目录。
 
-> 参考：仓库根目录可见 `app/`、`chinesettsmodule/`、`gradle/`、`lib/arm64-v8a/`、`settings.gradle` 等；同时存在一个发布条目（“两个模型文件”）。
 
 ---
 
@@ -34,7 +33,6 @@
 └─ README.md                          # 本文件
 ```
 
-> **建议**：需要随 APK 打包进来的 .so 统一放置在各模块自己的 `src/main/jniLibs/arm64-v8a/` 下（`app/` 和 `chinesettsmodule/` 分开维护），避免在根目录 `lib/` 留下“游离”的副本导致冲突或混淆。
 
 ---
 
