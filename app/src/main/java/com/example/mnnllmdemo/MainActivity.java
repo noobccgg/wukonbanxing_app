@@ -42,6 +42,7 @@ import android.util.TypedValue;
 import android.view.Gravity;
 import android.view.Surface;
 
+import android.view.View;
 import android.view.Window;
 import android.view.WindowInsets;
 import android.view.WindowInsetsController;
@@ -202,6 +203,7 @@ public class MainActivity extends AppCompatActivity {
         // ===== TTS 初始化 =====
         TtsEngine.init(getApplicationContext());
 
+
         // ② 初始化期间先装“空”的点击/长按监听，防止误触
         mGLSurfaceView.setOnClickListener(v -> { /* ignore during init */ });
         mGLSurfaceView.setOnLongClickListener(v -> true); // 初始化锁内，长按也忽略
@@ -327,28 +329,49 @@ public class MainActivity extends AppCompatActivity {
         long duration = 1500; // 每个元素淡入的时长
         long staggerDelay = 1000; // 每个元素之间出现的延迟
 
-        // 动画序列：
-        // 1. 中心图标先出现
+        // 中心图标
         splashCenterIcon.animate()
                 .alpha(1.0f) // 目标透明度：完全不透明
                 .setDuration(duration)
                 .setStartDelay(0) // 立即开始
                 .start();
 
-        // 2. 接着是顶部的标题 Logo
+        // 顶部的标题 Logo
         splashLogoTitle.animate()
                 .alpha(1.0f)
                 .setDuration(duration)
                 .setStartDelay(staggerDelay) //
                 .start();
 
-        // 3. 然后是标语
+        // 标语
         splashSlogan.animate()
                 .alpha(1.0f)
                 .setDuration(duration)
-                .setStartDelay(staggerDelay * 2) //
+                .setStartDelay(staggerDelay * 2)
+                .withEndAction(() -> {
+                    new Handler(Looper.getMainLooper()).postDelayed(() -> {
+                        transferToMainAnimation();
+                    }, 500); // 500 毫秒 = 0.5 秒
+                })
                 .start();
 
+    }
+    private void transferToMainAnimation() {
+        splashScreenLayout.animate()
+                .alpha(0f)
+                .setDuration(1500) // 动画时长0.5秒
+                .withEndAction(() -> {
+                    splashScreenLayout.setVisibility(View.GONE); // 动画结束后彻底隐藏
+                })
+                .start();
+
+        //主内容界面淡入
+        mainScreenLayout.setAlpha(0f);
+        mainScreenLayout.setVisibility(View.VISIBLE);
+        mainScreenLayout.animate()
+                .alpha(1f)
+                .setDuration(500)
+                .start();
     }
     // === 各项设置：保持原来的落盘/即时生效逻辑 ===
     private void setSpeedOption(int index) {
