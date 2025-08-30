@@ -4,6 +4,7 @@ import com.alibaba.mnnllm.android.llm.LlmGate;
 
 import java.util.List;
 import java.util.ArrayList;
+
 import static com.example.mnnllmdemo.GLRender.FPS;
 import static com.example.mnnllmdemo.GLRender.camera_height;
 import static com.example.mnnllmdemo.GLRender.camera_width;
@@ -41,9 +42,14 @@ import android.util.TypedValue;
 import android.view.Gravity;
 import android.view.Surface;
 
+import android.view.View;
 import android.view.Window;
+import android.view.WindowInsets;
+import android.view.WindowInsetsController;
 import android.view.WindowManager;
+import android.widget.ImageView;
 import android.widget.LinearLayout;
+import android.widget.RelativeLayout;
 import android.widget.SeekBar;
 import android.widget.TextView;
 import android.widget.Toast;
@@ -81,7 +87,6 @@ public class MainActivity extends AppCompatActivity {
     private int currentVibrationIndex = 1;  // 当前震动类别索引
 
 
-
     private GLRender mGLRender;
     private static CameraManager mCameraManager;
     private static CameraDevice mCameraDevice;
@@ -113,9 +118,15 @@ public class MainActivity extends AppCompatActivity {
     private static final int MIN_DETECT_MS = 100;
     private static final int MAX_DETECT_MS = 1000;
 
-    private static final String INIT_TTS_TEXT = "初始化完成，请横屏使用，按住可进入设置模式，设置结束后可恢复导盲。";
+    private static final String INIT_TTS_TEXT = "请横屏使用，按住屏幕可进入设置模式，设置结束后可恢复导盲。";
     private static final long MIN_LOCK_MS = 2000L; // 初始最短锁定时长，避免太短
     private static final float BASE_ALPHA = 0.70f; // 默认语速系数
+
+    private RelativeLayout mainScreenLayout;
+    private RelativeLayout splashScreenLayout;
+    private ImageView splashLogoTitle;
+    private ImageView splashCenterIcon;
+    private ImageView splashSlogan;
 
     // 从偏好里读取保存过的语速系数（越小越快），没有就用默认
     private float readSavedAlpha() {
@@ -123,25 +134,41 @@ public class MainActivity extends AppCompatActivity {
         return sp.getFloat(KEY_TTS_ALPHA, DEFAULT_TTS_ALPHA);
     }
 
-    /** 估算中文播报时长（毫秒）：按字数/语速粗略估算，再加冗余 */
+    /**
+     * 估算中文播报时长（毫秒）：按字数/语速粗略估算，再加冗余
+     */
     private long estimateTtsDurationMs(String text, float alpha) {
         double cps = 11.0 * (BASE_ALPHA / Math.max(0.35, Math.min(1.20, alpha))); // 粗略字/秒
         long core = (long) Math.ceil(text.length() / Math.max(6.0, cps) * 1000.0);
         return Math.max(MIN_LOCK_MS, core + 3500L);
     }
 
-    static { System.loadLibrary("mnnllmdemo"); }
+    static {
+        System.loadLibrary("mnnllmdemo");
+    }
 
     @SuppressLint("SetTextI18n")
     @Override
     protected void onCreate(Bundle savedInstanceState) {
         // ① 初始化阶段先上闸门：禁止空旷/LLM插队 & 忽略交互
         LlmGate.setBusy(true);
-
         super.onCreate(savedInstanceState);
         setContentView(R.layout.activity_main);
+        final WindowInsetsController insetsController = getWindow().getInsetsController();
+        if (insetsController != null) {
+            insetsController.hide(WindowInsets.Type.statusBars() | WindowInsets.Type.navigationBars());
+            insetsController.setSystemBarsBehavior(WindowInsetsController.BEHAVIOR_SHOW_TRANSIENT_BARS_BY_SWIPE);
+        }
 
         mContext = this;
+        //尝试先加载上层幕布
+        splashScreenLayout = findViewById(R.id.splash_screen_layout);
+        splashLogoTitle = findViewById(R.id.splash_logo_title);
+        splashCenterIcon = findViewById(R.id.splash_center_icon);
+        splashSlogan = findViewById(R.id.splash_slogan);
+        mainScreenLayout = findViewById(R.id.main_screen_layout);
+        startLoadingAnimation();
+
         AssetManager mgr = getAssets();
         Read_Assets(file_name_class, mgr);
         FPS_view = findViewById(R.id.fps);
@@ -176,21 +203,26 @@ public class MainActivity extends AppCompatActivity {
         // ===== TTS 初始化 =====
         TtsEngine.init(getApplicationContext());
 
+
         // ② 初始化期间先装“空”的点击/长按监听，防止误触
-        mGLSurfaceView.setOnClickListener(v -> { /* ignore during init */ });
-        mGLSurfaceView.setOnLongClickListener(v -> true); // 初始化锁内，长按也忽略
+        mainScreenLayout.setOnClickListener(v -> { /* ignore during init */ });
+        mainScreenLayout.setOnLongClickListener(v -> true); // 初始化锁内，长按也忽略
 
         // ③ 播报“初始化完成…”，估算播报时长后再解锁并安装真正监听
         new Handler(Looper.getMainLooper()).postDelayed(() -> {
-            try { TtsEngine.speak(INIT_TTS_TEXT, true); } catch (Throwable ignore) {}
-            finally {
+
+            try {
+                //动画稍慢于初始化
+                TtsEngine.speak(INIT_TTS_TEXT, true);
+            } catch (Throwable ignore) {
+            } finally {
                 float alpha = readSavedAlpha();
                 long waitMs = estimateTtsDurationMs(INIT_TTS_TEXT, alpha);
 
                 new Handler(Looper.getMainLooper()).postDelayed(() -> {
 
                     // —— 设置模式下用“横屏左中右(=x/宽)”来选择 —— //
-                    mGLSurfaceView.setOnTouchListener((view, event) -> {
+                    mainScreenLayout.setOnTouchListener((view, event) -> {
                         // 仅在“设置模式”(闸门=关)处理触摸
                         if (!LlmGate.isBusy()) return false;
 
@@ -206,8 +238,7 @@ public class MainActivity extends AppCompatActivity {
                                     // 第一次点击：只播报指引，不做设置
                                     TtsEngine.speak("进入设置模式，现在设置语速，请在横屏下点击：左侧慢速，中间正常，右侧快速。", true);
                                     settingStep = 1; // 进入语速设置
-                                }
-                                else if (settingStep == 1) {
+                                } else if (settingStep == 1) {
                                     // 语速：左=慢 中=正常 右=快
                                     setSpeedOption(zone);
                                     if (zone == 0) {
@@ -218,8 +249,7 @@ public class MainActivity extends AppCompatActivity {
                                         TtsEngine.speak("语速已设为快速，现在设置检测频率，请在横屏下点击：左侧一千毫秒，中间七百毫秒，右侧五百毫秒。", true);
                                     }
                                     settingStep = 2; // 进入检测频率设置
-                                }
-                                else if (settingStep == 2) {
+                                } else if (settingStep == 2) {
                                     // 检测频率：左=1000ms 中=700ms 右=500ms
                                     setIntervalOption(zone);
                                     if (zone == 0) {
@@ -230,8 +260,7 @@ public class MainActivity extends AppCompatActivity {
                                         TtsEngine.speak("检测频率已设为五百毫秒，现在设置震动类别，请在横屏下点击：左侧无震动，中间汽车路障自行车，右侧再加杆柱减速带上下行楼梯。", true);
                                     }
                                     settingStep = 3; // 进入震动设置
-                                }
-                                else if (settingStep == 3) {
+                                } else if (settingStep == 3) {
                                     // 震动类别（三档）：左=无震动 中=三类 右=再加四类
                                     int vibIndex = Math.max(0, Math.min(2, zone)); // 仅 0..2
                                     setVibrationOption(vibIndex);
@@ -244,8 +273,7 @@ public class MainActivity extends AppCompatActivity {
                                     }
                                     // 进入“等待退出”的点击阶段
                                     settingStep = 4;
-                                }
-                                else if (settingStep == 4) {
+                                } else if (settingStep == 4) {
                                     // 用户再次点击：退出设置模式，恢复识别与播报
                                     LlmGate.setBusy(false);  // 打开闸门
                                     settingStep = 0;
@@ -259,7 +287,7 @@ public class MainActivity extends AppCompatActivity {
                     });
 
                     // —— 长按：非设置模式→进入；设置模式→（不处理退出，退出靠“再次点击”） —— //
-                    mGLSurfaceView.setOnLongClickListener(v2 -> {
+                    mainScreenLayout.setOnLongClickListener(v2 -> {
                         if (!LlmGate.isBusy()) {
                             // 进入设置模式（闸门关）
                             LlmGate.setBusy(true);
@@ -267,7 +295,8 @@ public class MainActivity extends AppCompatActivity {
                             settingStep = 0; // 第一次点击只播报指引，不做设置
                             try {
                                 TtsEngine.speak("进入设置模式。请横屏使用。", true);
-                            } catch (Throwable ignore3) {}
+                            } catch (Throwable ignore3) {
+                            }
                         } else {
                             // 设置模式中长按不做任何事（退出由再次点击触发）
                         }
@@ -279,7 +308,10 @@ public class MainActivity extends AppCompatActivity {
 
                     // ✅ 解锁后再“喂看门狗”，防止刚解锁被误判空旷
                     new Handler(Looper.getMainLooper()).post(() -> {
-                        try { com.example.mnnllmdemo.llm.DetResultReporter.INSTANCE.onFrame(true); } catch (Throwable ignore2) {}
+                        try {
+                            com.example.mnnllmdemo.llm.DetResultReporter.INSTANCE.onFrame(true);
+                        } catch (Throwable ignore2) {
+                        }
                     });
 
                 }, waitMs);
@@ -289,14 +321,70 @@ public class MainActivity extends AppCompatActivity {
 
     // —— 旧的点击计数逻辑不再使用，这里留空以兼容旧调用 —— //
 
+    private void startLoadingAnimation() {
+        // 确保所有视图都已准备好
+        if (splashLogoTitle == null || splashCenterIcon == null || splashSlogan == null) {
+            return;
+        }
 
+        // 定义动画时长和延迟
+        long duration = 1500; // 每个元素淡入的时长
+        long staggerDelay = 800; // 每个元素之间出现的延迟
+
+        // 中心图标
+        splashCenterIcon.animate()
+                .alpha(1.0f) // 目标透明度：完全不透明
+                .setDuration(duration)
+                .setStartDelay(0) // 立即开始
+                .start();
+
+        // 顶部的标题 Logo
+        splashLogoTitle.animate()
+                .alpha(1.0f)
+                .setDuration(duration)
+                .setStartDelay(staggerDelay) //
+                .start();
+
+        // 标语
+        splashSlogan.animate()
+                .alpha(1.0f)
+                .setDuration(duration)
+                .setStartDelay(staggerDelay * 2)
+                .withEndAction(() -> {
+                    new Handler(Looper.getMainLooper()).postDelayed(() -> {
+                        transferToMainAnimation();
+                    }, 500); // 500 毫秒 = 0.5 秒
+                })
+                .start();
+
+    }
+    private void transferToMainAnimation() {
+        splashScreenLayout.animate()
+                .alpha(0f)
+                .setDuration(1500) // 动画时长0.5秒
+                .withEndAction(() -> {
+                    splashScreenLayout.setVisibility(View.GONE); // 动画结束后彻底隐藏
+                })
+                .start();
+
+        //主内容界面淡入
+        mainScreenLayout.setAlpha(0f);
+        mainScreenLayout.setVisibility(View.VISIBLE);
+        mainScreenLayout.animate()
+                .alpha(1f)
+                .setDuration(500)
+                .start();
+    }
     // === 各项设置：保持原来的落盘/即时生效逻辑 ===
     private void setSpeedOption(int index) {
         currentSpeedIndex = Math.max(0, Math.min(2, index)); // 只允许 0..2
         float speed = speedOptions[currentSpeedIndex];
         SharedPreferences sp = getSharedPreferences(PREFS, MODE_PRIVATE);
         sp.edit().putFloat(KEY_TTS_ALPHA, speed).apply();
-        try { TtsEngine.setSpeedAlpha(speed); } catch (Throwable ignore) {}
+        try {
+            TtsEngine.setSpeedAlpha(speed);
+        } catch (Throwable ignore) {
+        }
     }
 
     private void setIntervalOption(int index) {
@@ -377,12 +465,19 @@ public class MainActivity extends AppCompatActivity {
 
         valueAlpha.setText(String.format(java.util.Locale.US, "当前：%.2f", currentAlpha));
         sbAlpha.setOnSeekBarChangeListener(new SeekBar.OnSeekBarChangeListener() {
-            @Override public void onProgressChanged(SeekBar seekBar, int p, boolean fromUser) {
+            @Override
+            public void onProgressChanged(SeekBar seekBar, int p, boolean fromUser) {
                 float alpha = MIN_TTS_ALPHA + (MAX_TTS_ALPHA - MIN_TTS_ALPHA) * (p / 100f);
                 valueAlpha.setText(String.format(java.util.Locale.US, "当前：%.2f", alpha));
             }
-            @Override public void onStartTrackingTouch(SeekBar seekBar) {}
-            @Override public void onStopTrackingTouch(SeekBar seekBar) {}
+
+            @Override
+            public void onStartTrackingTouch(SeekBar seekBar) {
+            }
+
+            @Override
+            public void onStopTrackingTouch(SeekBar seekBar) {
+            }
         });
 
         TextView titleInterval = new TextView(this);
@@ -404,12 +499,19 @@ public class MainActivity extends AppCompatActivity {
 
         valueInterval.setText(String.format(java.util.Locale.US, "当前：%d ms", currentInterval));
         sbInterval.setOnSeekBarChangeListener(new SeekBar.OnSeekBarChangeListener() {
-            @Override public void onProgressChanged(SeekBar seekBar, int p, boolean fromUser) {
+            @Override
+            public void onProgressChanged(SeekBar seekBar, int p, boolean fromUser) {
                 int ms = MIN_DETECT_MS + p;
                 valueInterval.setText(String.format(java.util.Locale.US, "当前：%d ms", ms));
             }
-            @Override public void onStartTrackingTouch(SeekBar seekBar) {}
-            @Override public void onStopTrackingTouch(SeekBar seekBar) {}
+
+            @Override
+            public void onStartTrackingTouch(SeekBar seekBar) {
+            }
+
+            @Override
+            public void onStopTrackingTouch(SeekBar seekBar) {
+            }
         });
 
         TextView titleVibrate = new TextView(this);
@@ -430,23 +532,46 @@ public class MainActivity extends AppCompatActivity {
         root.addView(valueVibrate);
 
         sbVibrate.setOnSeekBarChangeListener(new SeekBar.OnSeekBarChangeListener() {
-            @Override public void onProgressChanged(SeekBar seekBar, int p, boolean fromUser) {
+            @Override
+            public void onProgressChanged(SeekBar seekBar, int p, boolean fromUser) {
                 List<String> selectedCategories = new ArrayList<>();
                 switch (p) {
-                    case 0: selectedCategories.clear(); valueVibrate.setText("当前：无震动"); break;
-                    case 1: selectedCategories.add("汽车"); selectedCategories.add("路障"); selectedCategories.add("自行车");
-                        valueVibrate.setText("当前：汽车、路障、自行车"); break;
-                    case 2: selectedCategories.add("汽车"); selectedCategories.add("路障"); selectedCategories.add("自行车");
-                        selectedCategories.add("杆柱"); selectedCategories.add("减速带");
-                        selectedCategories.add("上行楼梯"); selectedCategories.add("下行楼梯");
-                        valueVibrate.setText("当前：汽车、路障、自行车、杆柱、减速带、上行楼梯、下行楼梯"); break;
-                    case 3: selectedCategories.addAll(categories); valueVibrate.setText("当前：全部物体"); break;
+                    case 0:
+                        selectedCategories.clear();
+                        valueVibrate.setText("当前：无震动");
+                        break;
+                    case 1:
+                        selectedCategories.add("汽车");
+                        selectedCategories.add("路障");
+                        selectedCategories.add("自行车");
+                        valueVibrate.setText("当前：汽车、路障、自行车");
+                        break;
+                    case 2:
+                        selectedCategories.add("汽车");
+                        selectedCategories.add("路障");
+                        selectedCategories.add("自行车");
+                        selectedCategories.add("杆柱");
+                        selectedCategories.add("减速带");
+                        selectedCategories.add("上行楼梯");
+                        selectedCategories.add("下行楼梯");
+                        valueVibrate.setText("当前：汽车、路障、自行车、杆柱、减速带、上行楼梯、下行楼梯");
+                        break;
+                    case 3:
+                        selectedCategories.addAll(categories);
+                        valueVibrate.setText("当前：全部物体");
+                        break;
                 }
                 DetResultReporter.vibrateTargets.clear();
                 DetResultReporter.vibrateTargets.addAll(selectedCategories);
             }
-            @Override public void onStartTrackingTouch(SeekBar seekBar) {}
-            @Override public void onStopTrackingTouch(SeekBar seekBar) {}
+
+            @Override
+            public void onStartTrackingTouch(SeekBar seekBar) {
+            }
+
+            @Override
+            public void onStopTrackingTouch(SeekBar seekBar) {
+            }
         });
 
         new AlertDialog.Builder(this)
@@ -456,7 +581,10 @@ public class MainActivity extends AppCompatActivity {
                     int pA = sbAlpha.getProgress();
                     float alpha = MIN_TTS_ALPHA + (MAX_TTS_ALPHA - MIN_TTS_ALPHA) * (pA / 100f);
                     sp.edit().putFloat(KEY_TTS_ALPHA, alpha).apply();
-                    try { TtsEngine.setSpeedAlpha(alpha); } catch (Throwable t) {}
+                    try {
+                        TtsEngine.setSpeedAlpha(alpha);
+                    } catch (Throwable t) {
+                    }
 
                     int pI = sbInterval.getProgress();
                     int interval = MIN_DETECT_MS + pI;
@@ -493,7 +621,10 @@ public class MainActivity extends AppCompatActivity {
     @Override
     protected void onDestroy() {
         super.onDestroy();
-        try { TtsEngine.release(); } catch (Throwable ignore) {}
+        try {
+            TtsEngine.release();
+        } catch (Throwable ignore) {
+        }
     }
 
     private void startBackgroundThread() {
@@ -582,12 +713,14 @@ public class MainActivity extends AppCompatActivity {
             }
         }
 
-        @Override public void onDisconnected(@NonNull CameraDevice cameraDevice) {
+        @Override
+        public void onDisconnected(@NonNull CameraDevice cameraDevice) {
             cameraDevice.close();
             mCameraDevice = null;
         }
 
-        @Override public void onError(@NonNull CameraDevice cameraDevice, int error) {
+        @Override
+        public void onError(@NonNull CameraDevice cameraDevice, int error) {
             cameraDevice.close();
             mCameraDevice = null;
             finish();
@@ -610,17 +743,25 @@ public class MainActivity extends AppCompatActivity {
                 e.printStackTrace();
             }
         }
-        @Override public void onConfigureFailed(@NonNull CameraCaptureSession session) {}
+
+        @Override
+        public void onConfigureFailed(@NonNull CameraCaptureSession session) {
+        }
     };
 
     private final CameraCaptureSession.CaptureCallback mCaptureCallback
             = new CameraCaptureSession.CaptureCallback() {
-        @Override public void onCaptureProgressed(@NonNull CameraCaptureSession session,
-                                                  @NonNull CaptureRequest request,
-                                                  @NonNull CaptureResult partialResult) {}
-        @Override public void onCaptureCompleted(@NonNull CameraCaptureSession session,
-                                                 @NonNull CaptureRequest request,
-                                                 @NonNull TotalCaptureResult result) {}
+        @Override
+        public void onCaptureProgressed(@NonNull CameraCaptureSession session,
+                                        @NonNull CaptureRequest request,
+                                        @NonNull CaptureResult partialResult) {
+        }
+
+        @Override
+        public void onCaptureCompleted(@NonNull CameraCaptureSession session,
+                                       @NonNull CaptureRequest request,
+                                       @NonNull TotalCaptureResult result) {
+        }
     };
 
     private void closeCamera() {
@@ -653,9 +794,14 @@ public class MainActivity extends AppCompatActivity {
     }
 
     public static native void Process_Init(int textureId);
+
     public static native int[] Process_Texture();
+
     private native boolean Load_Models_A(AssetManager assetManager, boolean USE_XNNPACK);
+
     private native boolean Load_Models_B(AssetManager assetManager, boolean USE_XNNPACK);
+
     public static native float[] Run_YOLO(byte[] pixel_values);
+
     public static native float[] Run_Depth(byte[] pixel_values);
 }

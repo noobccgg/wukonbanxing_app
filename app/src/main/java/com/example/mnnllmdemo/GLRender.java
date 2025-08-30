@@ -18,6 +18,7 @@ import android.opengl.GLES11Ext;
 import android.opengl.GLES20;
 import android.opengl.GLES32;
 import android.opengl.GLSurfaceView;
+import android.util.Log;
 
 import com.example.mnnllmdemo.llm.DetResultReporter;  // ← 新增
 
@@ -207,6 +208,7 @@ public class GLRender implements GLSurfaceView.Renderer {
 
     @Override
     public void onDrawFrame(GL10 gl) {
+        Log.e("mine", "fuck android");
         if (com.alibaba.mnnllm.android.llm.LlmGate.isBusy()) {
             return;
         }
