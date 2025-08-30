@@ -332,7 +332,7 @@ public class MainActivity extends AppCompatActivity {
                     });
 
                 }, waitMs);
-               // setupWarningObserver();
+                setupWarningObserver();
             }
         }, 300);
     }
@@ -411,25 +411,20 @@ public class MainActivity extends AppCompatActivity {
         imageParams.height = imageHeight;
         scrollingImageView.setLayoutParams(imageParams);
 
-        // 创建动画序列
         ObjectAnimator scrollOutAnimator = ObjectAnimator.ofFloat(
                 scrollingImageView, "translationX", 0f, -imageWidth);
         scrollOutAnimator.setDuration(4000L);
         scrollOutAnimator.setInterpolator(new LinearInterpolator());
         scrollOutAnimator.setStartDelay(2000L);
 
-        // 动画B: "登场" - 文字从右侧滚动回屏幕中央
         ObjectAnimator scrollInAnimator = ObjectAnimator.ofFloat(
                 scrollingImageView, "translationX", imageWidth, 0f); // 从右侧(imageWidth)回到中间(0)
         scrollInAnimator.setDuration(4000L);
         scrollInAnimator.setInterpolator(new LinearInterpolator());
 
-        // 动画C: 登场结束后的停顿
         ValueAnimator endPauseAnimator = ValueAnimator.ofInt(0, 1);
         endPauseAnimator.setDuration(2000L);
 
-        // ！！！这是实现效果的关键！！！
-        // 我们监听“退场”动画的结束事件
         scrollOutAnimator.addListener(new AnimatorListenerAdapter() {
             @Override
             public void onAnimationEnd(Animator animation) {
@@ -441,9 +436,9 @@ public class MainActivity extends AppCompatActivity {
 
         animatorSet = new AnimatorSet();
         animatorSet.playSequentially(
-                scrollOutAnimator,  // 1. (带延迟) 退场
-                scrollInAnimator,   // 2. 登场
-                endPauseAnimator    // 3. 登场后停顿
+                scrollOutAnimator,
+                scrollInAnimator,
+                endPauseAnimator
         );
 
         animatorSet.addListener(new AnimatorListenerAdapter() {
@@ -456,7 +451,7 @@ public class MainActivity extends AppCompatActivity {
 
         animatorSet.start();
     }
-/*
+
     private void setupWarningObserver() {
         // 假设你在XML中已经添加了它，id 为 main_warning_icon
         final ImageView warningIconView = findViewById(R.id.main_warning_icon);
@@ -467,7 +462,12 @@ public class MainActivity extends AppCompatActivity {
 
             if (warningState == null) {
                 // 如果状态为空，说明没有障碍物，隐藏警告图标
+                Log.e("icon", "working but no barrier, i will show car.");
                 warningIconView.setVisibility(View.GONE);
+                /*
+                warningIconView.setVisibility(View.VISIBLE);
+                warningIconView.setImageResource(R.drawable.icon_car);
+                */
             } else {
                 // 如果有障碍物，根据名称匹配并显示对应的图片
                 int drawableId = matchObstacleToDrawable(warningState.obstacleName);
@@ -506,7 +506,7 @@ public class MainActivity extends AppCompatActivity {
 
         return 0;
     }
- */
+
 
     private void setSpeedOption(int index) {
         currentSpeedIndex = Math.max(0, Math.min(2, index)); // 只允许 0..2
