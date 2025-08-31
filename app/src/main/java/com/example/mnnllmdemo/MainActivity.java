@@ -1,7 +1,7 @@
 package com.example.mnnllmdemo;
 
 import com.alibaba.mnnllm.android.llm.LlmGate;
-
+import com.example.mnnllmdemo.llm.UiState;
 import java.util.List;
 import java.util.ArrayList;
 
@@ -18,12 +18,18 @@ import com.example.mnnllmdemo.llm.LlmSimpleClient;
 import com.example.mnnllmdemo.llm.DetResultReporter;
 
 import android.Manifest;
+import android.animation.Animator;
+import android.animation.AnimatorListenerAdapter;
+import android.animation.AnimatorSet;
+import android.animation.ObjectAnimator;
+import android.animation.ValueAnimator;
 import android.annotation.SuppressLint;
 import android.content.Context;
 import android.content.SharedPreferences;
 import android.content.pm.PackageManager;
 import android.content.res.AssetManager;
 import android.graphics.SurfaceTexture;
+import android.graphics.drawable.Drawable;
 import android.hardware.camera2.CameraAccessException;
 import android.hardware.camera2.CameraCaptureSession;
 import android.hardware.camera2.CameraDevice;
@@ -38,15 +44,19 @@ import android.os.Bundle;
 import android.os.Handler;
 import android.os.HandlerThread;
 import android.os.Looper;
+import android.util.Log;
 import android.util.TypedValue;
 import android.view.Gravity;
 import android.view.Surface;
 
 import android.view.View;
+import android.view.ViewGroup;
 import android.view.Window;
 import android.view.WindowInsets;
 import android.view.WindowInsetsController;
 import android.view.WindowManager;
+import android.view.animation.LinearInterpolator;
+import android.widget.FrameLayout;
 import android.widget.ImageView;
 import android.widget.LinearLayout;
 import android.widget.RelativeLayout;
@@ -118,7 +128,7 @@ public class MainActivity extends AppCompatActivity {
     private static final int MIN_DETECT_MS = 100;
     private static final int MAX_DETECT_MS = 1000;
 
-    private static final String INIT_TTS_TEXT = "请横屏使用，按住屏幕可进入设置模式，设置结束后可恢复导盲。";
+    private static final String INIT_TTS_TEXT = "请横屏使用，按住屏幕再松开可进入设置模式，设置结束自动恢复导盲。";
     private static final long MIN_LOCK_MS = 2000L; // 初始最短锁定时长，避免太短
     private static final float BASE_ALPHA = 0.70f; // 默认语速系数
 
@@ -127,6 +137,11 @@ public class MainActivity extends AppCompatActivity {
     private ImageView splashLogoTitle;
     private ImageView splashCenterIcon;
     private ImageView splashSlogan;
+    private ImageView scrollingImageView;
+    private ObjectAnimator scrollAnimator;
+    private FrameLayout scrollingViewport;
+
+    private AnimatorSet animatorSet;
 
     // 从偏好里读取保存过的语速系数（越小越快），没有就用默认
     private float readSavedAlpha() {
@@ -167,6 +182,8 @@ public class MainActivity extends AppCompatActivity {
         splashCenterIcon = findViewById(R.id.splash_center_icon);
         splashSlogan = findViewById(R.id.splash_slogan);
         mainScreenLayout = findViewById(R.id.main_screen_layout);
+        scrollingImageView = findViewById(R.id.scrolling_text_image);
+        scrollingViewport = findViewById(R.id.scrolling_text_viewport);
         startLoadingAnimation();
 
         AssetManager mgr = getAssets();
@@ -315,17 +332,13 @@ public class MainActivity extends AppCompatActivity {
                     });
 
                 }, waitMs);
+                setupWarningObserver();
             }
         }, 300);
     }
 
-    // —— 旧的点击计数逻辑不再使用，这里留空以兼容旧调用 —— //
 
     private void startLoadingAnimation() {
-        // 确保所有视图都已准备好
-        if (splashLogoTitle == null || splashCenterIcon == null || splashSlogan == null) {
-            return;
-        }
 
         // 定义动画时长和延迟
         long duration = 1500; // 每个元素淡入的时长
@@ -358,6 +371,7 @@ public class MainActivity extends AppCompatActivity {
                 .start();
 
     }
+
     private void transferToMainAnimation() {
         splashScreenLayout.animate()
                 .alpha(0f)
@@ -374,8 +388,126 @@ public class MainActivity extends AppCompatActivity {
                 .alpha(1f)
                 .setDuration(500)
                 .start();
+        setupAndStartScrollingAnimation();
     }
-    // === 各项设置：保持原来的落盘/即时生效逻辑 ===
+
+    private void setupAndStartScrollingAnimation() {
+        // 我们使用 view.post() 方法，它能保证在View被正确布局后才执行内部的代码。
+        Drawable drawable = scrollingImageView.getDrawable();
+        if (drawable == null) return;
+
+        int imageWidth = drawable.getIntrinsicWidth() / 7;
+        int imageHeight = drawable.getIntrinsicHeight() / 2;
+        if (imageWidth <= 0) return;
+
+        // 尺寸设置
+        ViewGroup.LayoutParams viewportParams = scrollingViewport.getLayoutParams();
+        viewportParams.width = imageWidth;
+        viewportParams.height = imageHeight;
+        scrollingViewport.setLayoutParams(viewportParams);
+
+        ViewGroup.LayoutParams imageParams = scrollingImageView.getLayoutParams();
+        imageParams.width = imageWidth;
+        imageParams.height = imageHeight;
+        scrollingImageView.setLayoutParams(imageParams);
+
+        ObjectAnimator scrollOutAnimator = ObjectAnimator.ofFloat(
+                scrollingImageView, "translationX", 0f, -imageWidth);
+        scrollOutAnimator.setDuration(4000L);
+        scrollOutAnimator.setInterpolator(new LinearInterpolator());
+        scrollOutAnimator.setStartDelay(2000L);
+
+        ObjectAnimator scrollInAnimator = ObjectAnimator.ofFloat(
+                scrollingImageView, "translationX", imageWidth, 0f); // 从右侧(imageWidth)回到中间(0)
+        scrollInAnimator.setDuration(4000L);
+        scrollInAnimator.setInterpolator(new LinearInterpolator());
+
+        ValueAnimator endPauseAnimator = ValueAnimator.ofInt(0, 1);
+        endPauseAnimator.setDuration(2000L);
+
+        scrollOutAnimator.addListener(new AnimatorListenerAdapter() {
+            @Override
+            public void onAnimationEnd(Animator animation) {
+                super.onAnimationEnd(animation);
+                // 当文字滚出左边后，立即将它“瞬移”到右边，为“登场”做准备
+                scrollingImageView.setTranslationX(imageWidth);
+            }
+        });
+
+        animatorSet = new AnimatorSet();
+        animatorSet.playSequentially(
+                scrollOutAnimator,
+                scrollInAnimator,
+                endPauseAnimator
+        );
+
+        animatorSet.addListener(new AnimatorListenerAdapter() {
+            @Override
+            public void onAnimationEnd(Animator animation) {
+                super.onAnimationEnd(animation);
+                animatorSet.start();
+            }
+        });
+
+        animatorSet.start();
+    }
+
+    private void setupWarningObserver() {
+        // 假设你在XML中已经添加了它，id 为 main_warning_icon
+        final ImageView warningIconView = findViewById(R.id.main_warning_icon);
+        if (warningIconView == null) return; // 安全检查
+
+        UiState.getCurrentWarning().observe(this, warningState -> {
+            // 每当 LiveData 的值发生变化，这里的代码就会被自动执行！
+
+            if (warningState == null) {
+                // 如果状态为空，说明没有障碍物，隐藏警告图标
+                Log.e("icon", "working but no barrier, i will show car.");
+                warningIconView.setVisibility(View.GONE);
+                /*
+                warningIconView.setVisibility(View.VISIBLE);
+                warningIconView.setImageResource(R.drawable.icon_car);
+                */
+            } else {
+                // 如果有障碍物，根据名称匹配并显示对应的图片
+                int drawableId = matchObstacleToDrawable(warningState.obstacleName);
+
+                if (drawableId != 0) { // 0 表示没有匹配到
+                    warningIconView.setImageResource(drawableId);
+                    warningIconView.setVisibility(View.VISIBLE);
+                } else {
+                    // 如果没有匹配到具体的图标，也隐藏它
+                    warningIconView.setVisibility(View.GONE);
+                }
+            }
+        });
+    }
+
+    private int matchObstacleToDrawable(String obstacleName) {
+        if (obstacleName == null || obstacleName.isEmpty()) {
+            return 0;
+        }
+
+        String normalizedName = obstacleName.toLowerCase().trim();
+
+        switch (normalizedName) {
+            case "汽车": case "car":
+                return R.drawable.icon_car;
+            // ... (添加你所有的 case)
+            case "左转盲道":
+                return R.drawable.icon_left;
+            case "右转盲道":
+                return R.drawable.icon_right;
+        }
+
+        if (normalizedName.contains("楼梯") || normalizedName.contains("stair")) {
+            return R.drawable.icon_stairs;
+        }
+
+        return 0;
+    }
+
+
     private void setSpeedOption(int index) {
         currentSpeedIndex = Math.max(0, Math.min(2, index)); // 只允许 0..2
         float speed = speedOptions[currentSpeedIndex];
@@ -434,173 +566,6 @@ public class MainActivity extends AppCompatActivity {
         mGLSurfaceView.setRenderer(mGLRender);
     }
 
-    // ============== 弹窗（可保留，但本方案不用弹窗） ==============
-    private void showSettingsDialog() {
-        final SharedPreferences sp = getSharedPreferences(PREFS, MODE_PRIVATE);
-        float currentAlpha = sp.getFloat(KEY_TTS_ALPHA, DEFAULT_TTS_ALPHA);
-        int currentInterval = sp.getInt(KEY_DETECT_INTERVAL_MS, DEFAULT_DETECT_MS);
-
-        LinearLayout root = new LinearLayout(this);
-        root.setOrientation(LinearLayout.VERTICAL);
-        int pad = (int) TypedValue.applyDimension(TypedValue.COMPLEX_UNIT_DIP, 16, getResources().getDisplayMetrics());
-        root.setPadding(pad, pad, pad, pad);
-        root.setGravity(Gravity.CENTER_VERTICAL);
-
-        TextView titleAlpha = new TextView(this);
-        titleAlpha.setText("语速（时长系数，越小越快）");
-        titleAlpha.setTextSize(16);
-        root.addView(titleAlpha);
-
-        TextView valueAlpha = new TextView(this);
-        valueAlpha.setTextSize(15);
-        valueAlpha.setPadding(0, dp(4), 0, dp(8));
-        root.addView(valueAlpha);
-
-        SeekBar sbAlpha = new SeekBar(this);
-        sbAlpha.setMax(100);
-        int progressAlpha = (int) ((currentAlpha - MIN_TTS_ALPHA) * 100f / (MAX_TTS_ALPHA - MIN_TTS_ALPHA));
-        progressAlpha = Math.max(0, Math.min(100, progressAlpha));
-        sbAlpha.setProgress(progressAlpha);
-        root.addView(sbAlpha);
-
-        valueAlpha.setText(String.format(java.util.Locale.US, "当前：%.2f", currentAlpha));
-        sbAlpha.setOnSeekBarChangeListener(new SeekBar.OnSeekBarChangeListener() {
-            @Override
-            public void onProgressChanged(SeekBar seekBar, int p, boolean fromUser) {
-                float alpha = MIN_TTS_ALPHA + (MAX_TTS_ALPHA - MIN_TTS_ALPHA) * (p / 100f);
-                valueAlpha.setText(String.format(java.util.Locale.US, "当前：%.2f", alpha));
-            }
-
-            @Override
-            public void onStartTrackingTouch(SeekBar seekBar) {
-            }
-
-            @Override
-            public void onStopTrackingTouch(SeekBar seekBar) {
-            }
-        });
-
-        TextView titleInterval = new TextView(this);
-        titleInterval.setText("检测间隔（YOLO + 深度，共用，数值越小越频繁）");
-        titleInterval.setTextSize(16);
-        titleInterval.setPadding(0, dp(16), 0, 0);
-        root.addView(titleInterval);
-
-        TextView valueInterval = new TextView(this);
-        valueInterval.setTextSize(15);
-        valueInterval.setPadding(0, dp(4), 0, dp(8));
-        root.addView(valueInterval);
-
-        SeekBar sbInterval = new SeekBar(this);
-        sbInterval.setMax(MAX_DETECT_MS - MIN_DETECT_MS); // 900
-        int progressInterval = Math.max(0, Math.min(MAX_DETECT_MS - MIN_DETECT_MS, currentInterval - MIN_DETECT_MS));
-        sbInterval.setProgress(progressInterval);
-        root.addView(sbInterval);
-
-        valueInterval.setText(String.format(java.util.Locale.US, "当前：%d ms", currentInterval));
-        sbInterval.setOnSeekBarChangeListener(new SeekBar.OnSeekBarChangeListener() {
-            @Override
-            public void onProgressChanged(SeekBar seekBar, int p, boolean fromUser) {
-                int ms = MIN_DETECT_MS + p;
-                valueInterval.setText(String.format(java.util.Locale.US, "当前：%d ms", ms));
-            }
-
-            @Override
-            public void onStartTrackingTouch(SeekBar seekBar) {
-            }
-
-            @Override
-            public void onStopTrackingTouch(SeekBar seekBar) {
-            }
-        });
-
-        TextView titleVibrate = new TextView(this);
-        titleVibrate.setText("震动类别（通过进度条选择）");
-        titleVibrate.setTextSize(16);
-        titleVibrate.setPadding(0, dp(16), 0, 0);
-        root.addView(titleVibrate);
-
-        SeekBar sbVibrate = new SeekBar(this);
-        sbVibrate.setMax(3);  // 四段：0,1,2,3
-        sbVibrate.setProgress(0);
-        root.addView(sbVibrate);
-
-        TextView valueVibrate = new TextView(this);
-        valueVibrate.setTextSize(15);
-        valueVibrate.setPadding(0, dp(4), 0, dp(8));
-        valueVibrate.setText("当前：无震动");
-        root.addView(valueVibrate);
-
-        sbVibrate.setOnSeekBarChangeListener(new SeekBar.OnSeekBarChangeListener() {
-            @Override
-            public void onProgressChanged(SeekBar seekBar, int p, boolean fromUser) {
-                List<String> selectedCategories = new ArrayList<>();
-                switch (p) {
-                    case 0:
-                        selectedCategories.clear();
-                        valueVibrate.setText("当前：无震动");
-                        break;
-                    case 1:
-                        selectedCategories.add("汽车");
-                        selectedCategories.add("路障");
-                        selectedCategories.add("自行车");
-                        valueVibrate.setText("当前：汽车、路障、自行车");
-                        break;
-                    case 2:
-                        selectedCategories.add("汽车");
-                        selectedCategories.add("路障");
-                        selectedCategories.add("自行车");
-                        selectedCategories.add("杆柱");
-                        selectedCategories.add("减速带");
-                        selectedCategories.add("上行楼梯");
-                        selectedCategories.add("下行楼梯");
-                        valueVibrate.setText("当前：汽车、路障、自行车、杆柱、减速带、上行楼梯、下行楼梯");
-                        break;
-                    case 3:
-                        selectedCategories.addAll(categories);
-                        valueVibrate.setText("当前：全部物体");
-                        break;
-                }
-                DetResultReporter.vibrateTargets.clear();
-                DetResultReporter.vibrateTargets.addAll(selectedCategories);
-            }
-
-            @Override
-            public void onStartTrackingTouch(SeekBar seekBar) {
-            }
-
-            @Override
-            public void onStopTrackingTouch(SeekBar seekBar) {
-            }
-        });
-
-        new AlertDialog.Builder(this)
-                .setTitle("设置")
-                .setView(root)
-                .setPositiveButton("保存", (d, w) -> {
-                    int pA = sbAlpha.getProgress();
-                    float alpha = MIN_TTS_ALPHA + (MAX_TTS_ALPHA - MIN_TTS_ALPHA) * (pA / 100f);
-                    sp.edit().putFloat(KEY_TTS_ALPHA, alpha).apply();
-                    try {
-                        TtsEngine.setSpeedAlpha(alpha);
-                    } catch (Throwable t) {
-                    }
-
-                    int pI = sbInterval.getProgress();
-                    int interval = MIN_DETECT_MS + pI;
-                    sp.edit().putInt(KEY_DETECT_INTERVAL_MS, interval).apply();
-                    GLRender.YOLO_COOLDOWN_MS = interval;
-                    GLRender.DEPTH_COOLDOWN_MS = interval;
-
-                    Toast.makeText(this, "设置已应用", Toast.LENGTH_SHORT).show();
-                })
-                .setNegativeButton("取消", null)
-                .show();
-    }
-
-    private int dp(int v) {
-        return (int) TypedValue.applyDimension(TypedValue.COMPLEX_UNIT_DIP, v, getResources().getDisplayMetrics());
-    }
 
     @Override
     public void onResume() {
@@ -621,6 +586,9 @@ public class MainActivity extends AppCompatActivity {
     @Override
     protected void onDestroy() {
         super.onDestroy();
+        if (scrollAnimator != null && scrollAnimator.isRunning()) {
+            scrollAnimator.cancel();
+        }
         try {
             TtsEngine.release();
         } catch (Throwable ignore) {

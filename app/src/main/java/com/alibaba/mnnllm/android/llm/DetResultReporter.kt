@@ -410,12 +410,27 @@ object DetResultReporter {
         val finalOrder = others + benchesPoles
 
         val parts = finalOrder.map { f ->
-            val nameZh = toZhLabel(f.p.label)      // 如果你已完全中文输入，也可直接用 f.p.label
+            val nameZh = toZhLabel(f.p.label)
             val orientZh = zhFromPosToken(f.posToken)
             val vStr = "%.2f".format(Locale.US, f.p.value)
             "$nameZh，$orientZh，距离$vStr"
         }
 
+        // 从最终要播报的列表中，选出第一个 (也就是最近、最重要的那个) 来更新UI
+        // 如果列表为空，就传递 null
+        val mostImportantObject = finalOrder.firstOrNull()
+        if (mostImportantObject != null) {
+            val warning = WarningState(
+                obstacleName = toZhLabel(mostImportantObject.p.label),
+                distance = mostImportantObject.p.value
+            )
+            // postValue 会自动切换到主线程来更新 LiveData
+            UiState.currentWarning.postValue(warning)
+        } else {
+            // 如果没有障碍物，就发布一个 null 状态，让UI可以隐藏图标
+            UiState.currentWarning.postValue(null)
+        }
+        // ********************************************
         return if (parts.isEmpty()) "未检测到障碍" else parts.joinToString("；")
     }
 

@@ -208,7 +208,6 @@ public class GLRender implements GLSurfaceView.Renderer {
 
     @Override
     public void onDrawFrame(GL10 gl) {
-        Log.e("mine", "fuck android");
         if (com.alibaba.mnnllm.android.llm.LlmGate.isBusy()) {
             return;
         }
