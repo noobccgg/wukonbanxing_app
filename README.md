@@ -1,5 +1,5 @@
 # blind guide on Android
-
+1
 > **TL;DR**：一个将 **YOLO 实时目标检测**、**单目深度估计** 与 **MNN 端侧 LLM + 中文 TTS** 整合到 **同一个 Android App** 的示例工程，支持离线运行，专注“看见→理解→播报”的闭环。在本仓库中：业务代码位于 `app/`，中文 TTS 作为独立模块位于 `chinesettsmodule/`，模型与本地库请按本文目录说明放置。
 
 ---
