@@ -90,7 +90,7 @@ graph LR
 ### 3. 构建与运行
 1. 克隆仓库并打开项目：
    ```bash
-   git clone <仓库地址> && cd BlindGuide-Android
+   git clone https://github.com/noobccgg/wukonbanxing_app.git
    ```
 2. 连接 Android 设备，点击 Android Studio "Run" 按钮
 3. 首次启动需授予相机与音频权限，即可开始使用
