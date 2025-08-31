@@ -270,11 +270,11 @@ public class MainActivity extends AppCompatActivity {
                                     // 检测频率：左=1000ms 中=700ms 右=500ms
                                     setIntervalOption(zone);
                                     if (zone == 0) {
-                                        TtsEngine.speak("检测频率已设为一千毫秒，现在设置震动类别，请在横屏下点击：左侧无震动，中间汽车路障自行车，右侧再加杆柱减速带上下行楼梯。", true);
+                                        TtsEngine.speak("检测频率已设为一千毫秒，现在设置震动类别，请在横屏下点击：左侧无震动，右侧开启震动。", true);
                                     } else if (zone == 1) {
-                                        TtsEngine.speak("检测频率已设为七百毫秒，现在设置震动类别，请在横屏下点击：左侧无震动，中间汽车路障自行车，右侧再加杆柱减速带上下行楼梯。", true);
+                                        TtsEngine.speak("检测频率已设为七百毫秒，现在设置震动类别，请在横屏下点击：左侧无震动，右侧开启震动。", true);
                                     } else {
-                                        TtsEngine.speak("检测频率已设为五百毫秒，现在设置震动类别，请在横屏下点击：左侧无震动，中间汽车路障自行车，右侧再加杆柱减速带上下行楼梯。", true);
+                                        TtsEngine.speak("检测频率已设为五百毫秒，现在设置震动类别，请在横屏下点击：左侧无震动，右侧开启震动。", true);
                                     }
                                     settingStep = 3; // 进入震动设置
                                 } else if (settingStep == 3) {
@@ -284,9 +284,9 @@ public class MainActivity extends AppCompatActivity {
                                     if (vibIndex == 0) {
                                         TtsEngine.speak("震动已关闭，设置已完成。点击任意位置退出设置模式。", true);
                                     } else if (vibIndex == 1) {
-                                        TtsEngine.speak("震动对象为汽车、路障和自行车，设置已完成。点击任意位置退出设置模式。", true);
+                                        TtsEngine.speak("震动已开启，设置已完成。点击任意位置退出设置模式。", true);
                                     } else {
-                                        TtsEngine.speak("震动对象增加为杆柱、减速带、以及上下行楼梯，设置已完成。点击任意位置退出设置模式。", true);
+                                        TtsEngine.speak("震动已开启，设置已完成。点击任意位置退出设置模式。", true);
                                     }
                                     // 进入“等待退出”的点击阶段
                                     settingStep = 4;
